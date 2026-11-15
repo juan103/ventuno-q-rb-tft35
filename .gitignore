@@ -1,0 +1,4 @@
+# build output and locally unpacked tools (created by kernel-driver/build.sh on the board)
+kernel-driver/out/
+kernel-driver/tools/
+__pycache__/

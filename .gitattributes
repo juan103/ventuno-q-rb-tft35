@@ -1,0 +1,2 @@
+# These files run on the board (Linux): keep LF line endings even when checked out on Windows.
+* text=auto eol=lf

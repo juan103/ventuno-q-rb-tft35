@@ -1,0 +1,28 @@
+// Joy-IT RB-TFT3.5 on the Arduino VENTUNO Q 40-pin JHAT header.
+// Display: kernel ili9486 driver. Touch chip: exposed as /dev/spidev0.1 (polled from userspace),
+// because its interrupt pin (JHAT pin 11 = SoC GPIO 85) is shared with the Bluetooth UART.
+/dts-v1/;
+/plugin/;
+
+&spi3 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	pinctrl-0 = <&qup_spi3_data_clk>, <&qup_spi3_cs_gpio>;
+	cs-gpios = <&tlmm 28 1>, <&tlmm 88 1>;	/* JHAT 24 (LCD_CS), JHAT 26 (TP_CS), active low */
+
+	display@0 {
+		/* only this name: "ilitek,ili9486" would also match the staging fbtft driver */
+		compatible = "waveshare,rpi-lcd-35";
+		reg = <0>;
+		spi-max-frequency = <16000000>;
+		rotation = <0>;
+		dc-gpios = <&tlmm 106 0>;	/* JHAT 18 */
+		reset-gpios = <&tlmm 107 0>;	/* JHAT 22 */
+	};
+
+	spidev@1 {
+		compatible = "rohm,dh2228fv";
+		reg = <1>;
+		spi-max-frequency = <2000000>;
+	};
+};
