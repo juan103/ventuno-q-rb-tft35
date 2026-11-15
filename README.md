@@ -201,3 +201,7 @@ Puts the kernel package's stock `combined-dtb.dtb` back and removes both udev ru
 | `kernel-driver/install.sh` | checks, backs up, writes `dtb_a`, adds the spidev udev rule |
 | `kernel-driver/keep-desktop-off.sh` | seat rule so X.org / GNOME leave the display alone |
 | `kernel-driver/uninstall.sh` | restores the stock device tree, removes the rules |
+
+## License
+
+[MIT](LICENSE)
