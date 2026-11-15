@@ -10,7 +10,7 @@ There are two independent ways to drive it:
 |---|---|---|
 | Needs root | no | yes (once, to install) |
 | Changes the system | nothing | replaces the boot device tree |
-| Full-screen update | about 13 s | about 0.28 s (3.6 fps) |
+| Full-screen update | about 13 s | about 0.3 s (2.9–3.6 fps measured) |
 | Result | a script that pushes pixels | a normal Linux framebuffer, `/dev/fb0` |
 
 Start with `tft.py`: it proves the wiring without touching the system.
@@ -28,9 +28,13 @@ One VENTUNO Q (ABX00181), November 2026:
 - device tree model `Qualcomm Technologies, Inc. Monaco Monza addons` (`arduino,monza`)
 - display plugged directly onto JHAT pins 1–26
 
-Not tested: other kernel versions, behaviour across a reboot after `keep-desktop-off.sh`, the
-`--kernel-touch` variant (it builds, it has never been booted), and touch with a real finger press
-(the touch chip answers on SPI; nobody pressed the panel during testing).
+Checked after a reboot with everything installed: the driver binds, the seat rule holds, GNOME
+starts on the HDMI/DP card only, and 150 full-screen updates through `fbshow.py` complete with no
+SPI timeouts.
+
+Not tested: other kernel versions, the `--kernel-touch` variant (it builds, it has never been
+booted), and touch with a real finger press (the touch chip answers on SPI; nobody pressed the
+panel during testing).
 
 ## Pin mapping
 
@@ -156,7 +160,17 @@ falls back to the SPI driver's FIFO path, which stalls. That part is inferred fr
 and the size boundary, not traced in the driver.
 
 `fbshow.blit()` therefore sends the screen in bands of 64 rows and waits for each band to finish
-before writing the next. Result: 150 full frames, 0 timeouts, 3.6 frames per second.
+before writing the next. Result: 150 full frames, 0 timeouts, at 2.9 to 3.6 frames per second
+across runs.
+
+### The panel is blank white after boot
+
+Nothing switches the panel on at boot, so it shows a white backlight until the first draw, and
+plain writes to `/dev/fb0` are not displayed in that state. The same happens after a display
+server releases the device. Re-applying the current video mode with `FBIOPUT_VSCREENINFO` and
+`FB_ACTIVATE_FORCE` makes the kernel's framebuffer the active picture. `fbshow.blit()` does this
+automatically when a write produces no SPI traffic; if you write to `/dev/fb0` from your own code,
+you need to do the same.
 
 ### Touch
 
@@ -185,8 +199,8 @@ Puts the kernel package's stock `combined-dtb.dtb` back and removes both udev ru
   that hardcodes `/dev/dri/card0` will get the TFT.
 - **Bluetooth and JHAT pin 11.** The touch interrupt pin is physically connected to the Bluetooth
   flow-control line whether or not you use it.
-- **Speed.** 3.6 full frames per second through `fbshow.py`. Partial updates are proportionally
-  faster.
+- **Speed.** About 3 full frames per second through `fbshow.py`. Partial updates are
+  proportionally faster.
 
 ## Files
 

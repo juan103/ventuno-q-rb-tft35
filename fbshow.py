@@ -46,23 +46,62 @@ def _bytes_tx():
 
 
 def _wait_band_sent(before, wire_bytes):
-    """Block until the kernel has finished sending the band that was just written."""
-    global _bus_probe
+    """Block until the kernel has finished sending the band that was just written.
+    Returns False if the kernel sent nothing at all (the framebuffer is not the active picture)."""
     nominal = wire_bytes * 8 / 16e6
     if before is None:
-        time.sleep(nominal + 0.02); return
+        time.sleep(nominal + 0.02); return True
     end = time.time() + 0.5
-    while _bytes_tx() - before < wire_bytes and time.time() < end:   # transfer has started
+    while _bytes_tx() - before < wire_bytes:      # wait for the transfer to start
+        if time.time() > end:
+            return False
         time.sleep(0.0005)
+    _wait_bus_idle(nominal + 0.005)
+    return True
+
+
+def _wait_bus_idle(fallback_sleep):
+    """A tiny transfer on the touch chip shares the SPI bus, so it returns only when the display
+    transfer in front of it is done. Without spidev, just sleep."""
+    global _bus_probe
     if _bus_probe is None:
         try:
             _bus_probe = Touch()
         except OSError:
             _bus_probe = False
     if _bus_probe:
-        _bus_probe.read(0x90)        # same SPI bus: returns only when the display transfer is done
+        _bus_probe.read(0x90)
     else:
-        time.sleep(nominal + 0.005)
+        time.sleep(fallback_sleep)
+
+
+_activated = False
+
+
+def _activate(fd):
+    """Make the kernel's framebuffer the picture on the panel.
+
+    After boot nothing has switched the panel on yet (it stays blank white), and after a display
+    server lets go of it the old picture stays up; in both cases plain writes to /dev/fb0 are not
+    shown. Re-applying the current mode with FB_ACTIVATE_FORCE fixes that. It makes the kernel
+    send one full frame in a single large transfer, so blit() only does it when a write produced
+    no SPI traffic.
+    """
+    global _activated
+    if _activated:
+        return
+    _activated = True
+    try:
+        var = bytearray(160)
+        fcntl.ioctl(fd, 0x4600, var)              # FBIOGET_VSCREENINFO
+        struct.pack_into('<I', var, 84, 128)      # activate = FB_ACTIVATE_NOW | FB_ACTIVATE_FORCE
+        fcntl.ioctl(fd, 0x4601, var)              # FBIOPUT_VSCREENINFO
+    except OSError as e:
+        print('note: could not activate the framebuffer (%s); is a display server using the TFT?'
+              % e.strerror, file=sys.stderr)
+        return
+    time.sleep(0.05)
+    _wait_bus_idle(0.6)   # switching the panel on sends one full frame; let it finish
 
 
 def blit(fb, img, rot180=False, y0=0):
@@ -98,11 +137,18 @@ def blit(fb, img, rot180=False, y0=0):
     rows = max(1, BAND_BYTES_ON_WIRE // (fb['w'] * 2) - 4)     # 64 rows on a 480-wide panel
     fd = os.open(fb['dev'], os.O_RDWR)
     try:
+        if _bytes_tx() is None:
+            _activate(fd)             # cannot detect an inactive framebuffer: always activate
         for y in range(0, h, rows):
             n = min(rows, h - y)
+            band = out[y * stride:(y + n) * stride]
             before = _bytes_tx()
-            os.pwrite(fd, out[y * stride:(y + n) * stride], (y0 + y) * stride)
-            _wait_band_sent(before, fb['w'] * n * 2)
+            os.pwrite(fd, band, (y0 + y) * stride)
+            if not _wait_band_sent(before, fb['w'] * n * 2) and not _activated:
+                _activate(fd)
+                before = _bytes_tx()
+                os.pwrite(fd, band, (y0 + y) * stride)
+                _wait_band_sent(before, fb['w'] * n * 2)
     finally:
         os.close(fd)
 
